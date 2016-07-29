@@ -253,6 +253,13 @@ def fix_mysql_manually():
             cursor.close()
             connection.close()
 
+            # TODO check if it's mariadb or mysql that is installed
+            print "Regenerate debian 'debian-sys-maint' special user"
+            # subprocess.check_output("dpkg-reconfigure -f noninteractive -p critical mariadb-server-10.0", shell=True)
+            subprocess.check_output("dpkg-reconfigure -p critical mariadb-server-10.0", shell=True)
+
+            time.sleep(5)
+
             # here we are finished for now, the **second** finally close will
             # stop mysqld_safe for us
 
