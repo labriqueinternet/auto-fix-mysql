@@ -5,6 +5,10 @@ Install requires:
 
 Then:
 
+    git clone https://github.com/labriqueinternet/auto-fix-mysql
+
+    cd auto-fix-mysql
+
     virtualenv ve
     source ve/bin/activate
 
