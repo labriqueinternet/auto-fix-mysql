@@ -3,6 +3,7 @@
 
 import os
 import sys
+import time
 import shutil
 import traceback
 import subprocess
@@ -16,6 +17,96 @@ import mysql.connector
 MYSQL_MYSQL_DB_DIR = "/var/lib/mysql/mysql"
 MYSQL_BACKUP_DIR = "/etc/yunohost/auto-fix-mysql/mysql-db-backup/"
 MYSQL_BROKEN_DIR = "/etc/yunohost/auto-fix-mysql/mysql-db-broken/"
+
+
+MYSQL_USER_TABLE_DEFAULTS = {
+    u'Select_priv': 'Y',
+    u'Insert_priv': 'Y',
+    u'Update_priv': 'Y',
+    u'Delete_priv': 'Y',
+    u'Create_priv': 'Y',
+    u'Drop_priv': 'Y',
+    u'Reload_priv': 'Y',
+    u'Shutdown_priv': 'Y',
+    u'Process_priv': 'Y',
+    u'File_priv': 'Y',
+    u'Grant_priv': 'Y',
+    u'References_priv': 'Y',
+    u'Index_priv': 'Y',
+    u'Alter_priv': 'Y',
+    u'Show_db_priv': 'Y',
+    u'Super_priv': 'Y',
+    u'Create_tmp_table_priv': 'Y',
+    u'Lock_tables_priv': 'Y',
+    u'Execute_priv': 'Y',
+    u'Repl_slave_priv': 'Y',
+    u'Repl_client_priv': 'Y',
+    u'Create_view_priv': 'Y',
+    u'Show_view_priv': 'Y',
+    u'Create_routine_priv': 'Y',
+    u'Alter_routine_priv': 'Y',
+    u'Create_user_priv': 'Y',
+    u'Event_priv': 'Y',
+    u'Trigger_priv': 'Y',
+    u'Create_tablespace_priv': 'Y',
+    u'ssl_type': '',
+    u'ssl_cipher': '',
+    u'x509_issuer': '',
+    u'x509_subject': '',
+    u'max_questions': 0,
+    u'max_updates': 0,
+    u'max_connections': 0,
+    u'max_user_connections': 0,
+    u'plugin': '',
+    u'authentication_string': '',
+    u'password_expired': 'N',
+    u'is_role': 'N',
+}
+
+
+MYSQL_USER_TABLE_DEFAULTS_FOR_APPLICATIONS = {
+    u'Select_priv': 'N',
+    u'Insert_priv': 'N',
+    u'Update_priv': 'N',
+    u'Delete_priv': 'N',
+    u'Create_priv': 'N',
+    u'Drop_priv': 'N',
+    u'Reload_priv': 'N',
+    u'Shutdown_priv': 'N',
+    u'Process_priv': 'N',
+    u'File_priv': 'N',
+    u'Grant_priv': 'N',
+    u'References_priv': 'N',
+    u'Index_priv': 'N',
+    u'Alter_priv': 'N',
+    u'Show_db_priv': 'N',
+    u'Super_priv': 'N',
+    u'Create_tmp_table_priv': 'N',
+    u'Lock_tables_priv': 'N',
+    u'Execute_priv': 'N',
+    u'Repl_slave_priv': 'N',
+    u'Repl_client_priv': 'N',
+    u'Create_view_priv': 'N',
+    u'Show_view_priv': 'N',
+    u'Create_routine_priv': 'N',
+    u'Alter_routine_priv': 'N',
+    u'Create_user_priv': 'N',
+    u'Event_priv': 'N',
+    u'Trigger_priv': 'N',
+    u'Create_tablespace_priv': 'N',
+    u'ssl_type': '',
+    u'ssl_cipher': '',
+    u'x509_issuer': '',
+    u'x509_subject': '',
+    u'max_questions': 0,
+    u'max_updates': 0,
+    u'max_connections': 0,
+    u'max_user_connections': 0,
+    u'plugin': '',
+    u'authentication_string': '',
+    u'password_expired': 'N',
+    u'is_role': 'N',
+}
 
 
 def mysql_is_running():
@@ -73,6 +164,15 @@ def fix_mysql():
         print "Yay, we have a backup of mysql, let's use it \o/"
         fix_mysql_using_backup()
 
+    else:
+        try:
+            fix_mysql_manually()
+        except Exception as e:
+            traceback.print_exc(file=sys.stdout)
+            print e
+
+            display_failure_informations()
+
 
 def fix_mysql_using_backup():
     assert not mysql_is_running()
@@ -95,8 +195,157 @@ def fix_mysql_using_backup():
     if result == 0:
         print "Success!"
     else:
-        # TODO : switch to manual reverse fixing
-        display_failure_informations()
+        fix_mysql_manually()
+
+
+def fix_mysql_manually():
+    yunohost_mysql_password = open("/etc/yunohost/mysql", "r").read().strip()
+
+    try:
+        command = "cd %s && myisamchk -a *.MYI 2>&1 | grep error | cut -d \"'\" -f 2 | cut -d '.' -f 1" % MYSQL_MYSQL_DB_DIR
+        broken_tables = filter(None, subprocess.check_output(command, shell=True).strip().split("\n"))
+
+        print broken_tables
+
+        subprocess.Popen(["mysqld_safe", "--skip-grant-tables"])
+        time.sleep(3)
+
+        try:
+            connection = mysql.connector.connect(
+                user='root',
+                host='127.0.0.1',
+                database='mysql'
+            )
+
+            cursor = connection.cursor()
+
+            for table in broken_tables:
+                print "Reparing table %s..." % table
+                cursor.execute("repair table %s use_frm" % table)
+                cursor.fetchall()
+
+            print "Getting user table schema..."
+            cursor.execute("describe user")
+            schema = cursor.fetchall()
+
+            # first 3 fields are "host", "username", "password" and I already
+            # know what to put in them so I remove them
+            schema = schema[3:]
+
+            # I need to recreate the 3 missing root users
+            for host in ("localhost", "::1", "127.0.0.1"):
+                arguments = ["'%s'" % host, "'root'", "PASSWORD('%s')" % yunohost_mysql_password]
+
+                # I'm reversing the schema to handle all case, we had schema
+                # variations from various versions of mysql/mariadb and this
+                # should handle most cases
+                for name, kind, required, _, default, _ in schema:
+                    value = MYSQL_USER_TABLE_DEFAULTS.get(name, default)
+                    if isinstance(value, basestring):
+                        arguments.append("'%s'" % value)
+                    else:
+                        arguments.append(value)
+
+                sql = "insert into user values(%s);" % ", ".join(map(str, arguments))
+                print sql
+                cursor.execute(sql)
+
+            # TODO check if it's mariadb or mysql that is installed
+            # subprocess.check_output("dpkg-reconfigure -f noninteractive mariadb-server-10.0")
+
+            cursor.close()
+            connection.close()
+
+            # here we are finished for now, the **second** finally close will
+            # stop mysqld_safe for us
+
+        except Exception as e:
+            traceback.print_exc(file=sys.stdout)
+            print e
+            raise e
+
+        finally:
+            cursor.close()
+            connection.close()
+
+
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+        print e
+        raise e
+
+    finally:
+        for process in psutil.process_iter():
+            if "mysql" in process.name():
+                process.kill()
+
+    print "We rebuild the user table, let's start mysql hoping everything will be fine"
+    subprocess.check_output(["service", "mysql", "start"])
+
+    installed_apps = map(lambda x: x.strip(), filter(None, subprocess.check_output("yunohost app list -i | grep 'id:' | cut -d ':' -f 2", shell=True).strip().split("\n")))
+
+    apps_with_mysql_db = []
+
+    for app in installed_apps:
+        password = subprocess.check_output("yunohost app setting %s mysqlpwd" % app, shell=True).strip()
+
+        if password:
+            apps_with_mysql_db.append([app, password])
+
+    if not apps_with_mysql_db:
+        print "Success!"
+        return
+
+    try:
+        connection = mysql.connector.connect(
+            user='root',
+            password=open("/etc/yunohost/mysql", "r").read().strip(),
+            host='127.0.0.1',
+            database='mysql'
+        )
+
+        cursor = connection.cursor()
+
+        # I need to recreate the 3 missing root users
+        for app, password in apps_with_mysql_db:
+            arguments = ["'localhost'", "'%s'" % app, "PASSWORD('%s')" % password]
+
+            # I'm reversing the schema to handle all case, we had schema
+            # variations from various versions of mysql/mariadb and this
+            # should handle most cases
+            for name, kind, required, _, default, _ in schema:
+                value = MYSQL_USER_TABLE_DEFAULTS_FOR_APPLICATIONS.get(name, default)
+                if isinstance(value, basestring):
+                    arguments.append("'%s'" % value)
+                else:
+                    arguments.append(value)
+
+            sql = "insert into user values(%s);" % ", ".join(map(str, arguments))
+            print sql
+            cursor.execute(sql)
+
+            cursor.execute("GRANT ALL PRIVILEGES ON %s.* TO '%s'@localhost" % (app, app))
+
+        # TODO check if it's mariadb or mysql that is installed
+        # subprocess.check_output("dpkg-reconfigure -f noninteractive mariadb-server-10.0")
+
+        cursor.execute("FLUSH PRIVILEGES")
+
+        cursor.close()
+        connection.close()
+
+        # here we are finished for now, the **second** finally close will
+        # stop mysqld_safe for us
+
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+        print e
+
+        raise e
+
+    finally:
+        cursor.close()
+        connection.close()
 
 
 def display_failure_informations():
