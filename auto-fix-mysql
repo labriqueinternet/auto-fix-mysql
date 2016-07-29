@@ -250,9 +250,6 @@ def fix_mysql_manually():
                 print sql
                 cursor.execute(sql)
 
-            # TODO check if it's mariadb or mysql that is installed
-            # subprocess.check_output("dpkg-reconfigure -f noninteractive mariadb-server-10.0")
-
             cursor.close()
             connection.close()
 
