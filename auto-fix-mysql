@@ -59,6 +59,21 @@ def backup_mysql_db():
         connection.close()
 
 
+def there_is_a_backup():
+    return os.path.exists(os.path.join(MYSQL_BACKUP_DIR, "mysql"))
+
+
+def fix_mysql():
+    if there_is_a_backup():
+        fix_mysql_using_back()
+
+
+def fix_mysql_using_back():
+    assert not mysql_is_running()
+
+
 if __name__ == '__main__':
-    if mysql_is_running():
-        backup_mysql_db()
+   if not mysql_is_broken():
+       backup_mysql_db()
+   else:
+       fix_mysql()
