@@ -96,18 +96,22 @@ def fix_mysql_using_back():
         print "Success!"
     else:
         # TODO : switch to manual reverse fixing
-        mysql_logs = "/var/lib/mysql/%s.err" % (subprocess.check_output(["hostname"]).strip())
-        print "Huho, I've failed :("
-        print "Go look at https://wiki.labriqueinter.net/doku.php/howto:fix_self_corrupt_mysql for more informations"
+        display_failure_informations()
 
-        if os.path.exists(mysql_logs):
-            print
-            message = "Display last 40 lines of mysql logs from %s:" % mysql_logs
-            print message
-            print "=" * len(message)
-            subprocess.call(["tail", "-n", "40", mysql_logs])
-        else:
-            print "MySQL usually store it's failed starting log inside %s" % mysql_logs
+
+def display_failure_informations():
+    mysql_logs = "/var/lib/mysql/%s.err" % (subprocess.check_output(["hostname"]).strip())
+    print "Huho, I've failed :("
+    print "Go look at https://wiki.labriqueinter.net/doku.php/howto:fix_self_corrupt_mysql for more informations"
+
+    if os.path.exists(mysql_logs):
+        print
+        message = "Display last 40 lines of mysql logs from %s:" % mysql_logs
+        print message
+        print "=" * len(message)
+        subprocess.call(["tail", "-n", "40", mysql_logs])
+    else:
+        print "MySQL usually store it's failed starting log inside %s" % mysql_logs
 
 
 if __name__ == '__main__':
