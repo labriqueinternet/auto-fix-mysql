@@ -1,6 +1,7 @@
 Install requires:
 
-    sudo apt-get install python-virtualenv python-dev
+    sudo apt-get update
+    sudo apt-get install python-virtualenv python-dev rsync
 
 Then:
 
