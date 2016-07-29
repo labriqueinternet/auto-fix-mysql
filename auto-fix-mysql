@@ -10,6 +10,7 @@ import psutil
 import mysql.connector
 
 
+MYSQL_MYSQL_DB_DIR = "/var/lib/mysql/mysql"
 MYSQL_BACKUP_DIR = "/etc/yunohost/auto-fix-mysql/mysql-db-backup/"
 
 
@@ -46,7 +47,7 @@ def backup_mysql_db():
         if not os.path.exists(MYSQL_BACKUP_DIR):
             os.makedirs(MYSQL_BACKUP_DIR)
 
-        subprocess.check_call(["rsync", "-a", "/var/lib/mysql/mysql", MYSQL_BACKUP_DIR])
+        subprocess.check_call(["rsync", "-a", MYSQL_MYSQL_DB_DIR, MYSQL_BACKUP_DIR])
 
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
