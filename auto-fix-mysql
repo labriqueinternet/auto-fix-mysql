@@ -1,11 +1,57 @@
 #!/usr/bin/env python
 # encoding: utf-8
 
+import os
+import sys
+import traceback
+import subprocess
+
 import psutil
+import mysql.connector
+
+
+MYSQL_BACKUP_DIR = "/etc/yunohost/auto-fix-mysql/mysql-db-backup/"
 
 
 def is_mysql_is_running():
     return len([x for x in psutil.process_iter() if x.name().lower() == "mysqld"]) > 0
 
+
+def backup_mysql_db():
+    connection = mysql.connector.connect(
+        user='root',
+        password=open("/etc/yunohost/mysql", "r").read().strip(),
+        host='127.0.0.1',
+        database='mysql'
+    )
+
+    cursor = connection.cursor()
+
+    try:
+        cursor.execute("show tables")
+
+        # can't lock log tables
+        tables = [x[0] for x in cursor.fetchall() if not x[0].endswith("log")]
+
+        sql = "LOCK TABLES %s READ;" % " READ,".join(tables)
+        cursor.execute(sql)
+
+        if not os.path.exists(MYSQL_BACKUP_DIR):
+            os.makedirs(MYSQL_BACKUP_DIR)
+
+        subprocess.call(["rsync", "-a", "/var/lib/mysql/mysql", MYSQL_BACKUP_DIR])
+
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+        print e
+
+    finally:
+        cursor.execute("UNLOCK TABLES")
+
+        cursor.close()
+        connection.close()
+
+
 if __name__ == '__main__':
-    print is_mysql_is_running()
+    is_mysql_is_running()
+    backup_mysql_db()
