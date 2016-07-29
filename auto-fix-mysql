@@ -13,7 +13,7 @@ import mysql.connector
 MYSQL_BACKUP_DIR = "/etc/yunohost/auto-fix-mysql/mysql-db-backup/"
 
 
-def is_mysql_is_running():
+def mysql_is_running():
     return len([x for x in psutil.process_iter() if x.name().lower() == "mysqld"]) > 0
 
 
@@ -53,5 +53,5 @@ def backup_mysql_db():
 
 
 if __name__ == '__main__':
-    is_mysql_is_running()
-    backup_mysql_db()
+    if mysql_is_running():
+        backup_mysql_db()
