@@ -71,10 +71,10 @@ def there_is_a_backup():
 def fix_mysql():
     if there_is_a_backup():
         print "Yay, we have a backup of mysql, let's use it \o/"
-        fix_mysql_using_back()
+        fix_mysql_using_backup()
 
 
-def fix_mysql_using_back():
+def fix_mysql_using_backup():
     assert not mysql_is_running()
 
     broken_backup_target_dir = os.path.join(MYSQL_BROKEN_DIR, datetime.now().strftime("%F_%X").replace(":", "-"))
