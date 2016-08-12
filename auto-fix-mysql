@@ -334,6 +334,10 @@ def fix_mysql_manually():
             print sql
             cursor.execute(sql)
 
+            sql = "FLUSH PRIVILEGES"
+            print sql
+            cursor.execute(sql)
+
             sql = "GRANT ALL PRIVILEGES ON %s.* TO '%s'@localhost" % (app, app)
             print sql
             cursor.execute(sql)
