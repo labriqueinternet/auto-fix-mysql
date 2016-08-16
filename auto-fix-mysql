@@ -207,8 +207,7 @@ def fix_mysql_manually():
 
         print broken_tables
 
-        subprocess.Popen(["mysqld_safe", "--skip-grant-tables"])
-        time.sleep(3)
+        launch_mysql_in_safe_mode()
 
         try:
             connection = mysql.connector.connect(
@@ -362,6 +361,29 @@ def fix_mysql_manually():
     finally:
         cursor.close()
         connection.close()
+
+
+def launch_mysql_in_safe_mode():
+    subprocess.Popen(["mysqld_safe", "--skip-grant-tables"])
+    time.sleep(3)
+
+    for i in range(1, 4):
+        try:
+            mysql.connector.connect(
+                user='root',
+                host='127.0.0.1',
+                database='mysql'
+            ).close()
+
+            return
+        except Exception as e:
+            print "Can't connect to mysql in safe mode (error: %s), wait 1min and retry (this somethime fix it because mysql ™)" % e
+            print "Attemp number %s (will try this a maximum number of 3 times)" % i
+            time.sleep(60)
+            subprocess.Popen(["mysqld_safe", "--skip-grant-tables"])
+
+    print "ERROR: I'm not able to relaunch mysql in safe mode so I can't fix it, abording :("
+    sys.exit(1)
 
 
 def display_failure_informations():
