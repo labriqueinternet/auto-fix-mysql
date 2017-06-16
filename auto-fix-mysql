@@ -393,7 +393,7 @@ def display_failure_informations():
     mysql_logs = "/var/lib/mysql/%s.err" % (subprocess.check_output(["hostname"]).strip())
     print
     print "Huho, I've failed :("
-    print "Go look at https://wiki.labriqueinter.net/doku.php/howto:fix_self_corrupt_mysql for more informations"
+    print "Go look at https://wiki.labriqueinter.net/doku.php?id=howto:fix_self_corrupt_mysql for more informations"
 
     if os.path.exists(mysql_logs):
         print
