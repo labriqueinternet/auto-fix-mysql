@@ -202,7 +202,7 @@ def fix_mysql_manually():
     yunohost_mysql_password = open("/etc/yunohost/mysql", "r").read().strip()
 
     try:
-        command = "cd %s && myisamchk -a *.MYI 2>&1 | grep error | cut -d \"'\" -f 2 | cut -d '.' -f 1" % MYSQL_MYSQL_DB_DIR
+        command = "cd %s && myisamchk -a *.MYI 2>&1 | grep error | grep \"is not a\" | cut -d \"'\" -f 2 | cut -d '.' -f 1" % MYSQL_MYSQL_DB_DIR
         broken_tables = filter(None, subprocess.check_output(command, shell=True).strip().split("\n"))
 
         print broken_tables
