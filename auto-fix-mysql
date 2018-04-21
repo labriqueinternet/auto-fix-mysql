@@ -10,6 +10,7 @@ import subprocess
 
 from datetime import datetime
 
+import argh
 import psutil
 import mysql.connector
 
@@ -199,87 +200,133 @@ def fix_mysql_using_backup():
 
 
 def fix_mysql_manually():
-    yunohost_mysql_password = open("/etc/yunohost/mysql", "r").read().strip()
-
     try:
-        command = "cd %s && myisamchk -a *.MYI 2>&1 | grep error | grep \"is not a\" | cut -d \"'\" -f 2 | cut -d '.' -f 1" % MYSQL_MYSQL_DB_DIR
-        broken_tables = filter(None, subprocess.check_output(command, shell=True).strip().split("\n"))
+        recreate_broken_system_tables()
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+        print e
+        raise e
 
-        print broken_tables
+    finally:
+        stop_mysql()
 
-        launch_mysql_in_safe_mode()
+    print "We rebuild the user table, let's start mysql hoping everything will be fine"
+    recreate_apps_users()
 
+
+def launch_mysql_in_safe_mode():
+    subprocess.Popen(["mysqld_safe", "--skip-grant-tables"])
+    time.sleep(3)
+
+    for i in range(1, 4):
         try:
-            connection = mysql.connector.connect(
+            mysql.connector.connect(
                 user='root',
                 host='127.0.0.1',
                 database='mysql'
-            )
+            ).close()
 
-            cursor = connection.cursor()
-
-            for table in broken_tables:
-                print "Reparing table %s..." % table
-                cursor.execute("repair table %s use_frm" % table)
-                cursor.fetchall()
-
-            print "Getting user table schema..."
-            cursor.execute("describe user")
-            schema = cursor.fetchall()
-
-            # first 3 fields are "host", "username", "password" and I already
-            # know what to put in them so I remove them
-            schema = schema[3:]
-
-            # I need to recreate the 3 missing root users
-            for host in ("localhost", "::1", "127.0.0.1"):
-                arguments = ["'%s'" % host, "'root'", "PASSWORD('%s')" % yunohost_mysql_password]
-
-                # I'm reversing the schema to handle all case, we had schema
-                # variations from various versions of mysql/mariadb and this
-                # should handle most cases
-                for name, kind, required, _, default, _ in schema:
-                    value = MYSQL_USER_TABLE_DEFAULTS.get(name, default)
-                    if isinstance(value, basestring):
-                        arguments.append("'%s'" % value)
-                    else:
-                        arguments.append(value)
-
-                sql = "insert into user values(%s);" % ", ".join(map(str, arguments))
-                print sql
-                cursor.execute(sql)
-
-            cursor.close()
-            connection.close()
-
-            try:
-                is_on_mariadb = subprocess.check_output("dpkg -l | grep mariadb-server-10.0", shell=True).strip()
-            except subprocess.CalledProcessError:
-                is_on_mariadb = False
-
-            # TODO check if it's mariadb or mysql that is installed
-            print "Regenerate debian 'debian-sys-maint' special user (this is SUPER SUPER SLOW)"
-            if is_on_mariadb:
-                subprocess.check_output("dpkg-reconfigure -f noninteractive -p critical mariadb-server-10.0", shell=True)
-            else:
-                # assume that we are on mysql, since the cubes are on
-                # debian-stable those 2 lines should hold for a long time ... I hope.
-                subprocess.check_output("dpkg-reconfigure -f noninteractive -p critical mysql-server-5.5", shell=True)
-
-            time.sleep(5)
-
-            # here we are finished for now, the **second** finally close will
-            # stop mysqld_safe for us
-
+            return
         except Exception as e:
-            traceback.print_exc(file=sys.stdout)
-            print e
-            raise e
+            print "Can't connect to mysql in safe mode (error: %s), wait 1min and retry (this somethime fix it because mysql ™)" % e
+            print "Attemp number %s (will try this a maximum number of 3 times)" % i
+            time.sleep(60)
+            subprocess.Popen(["mysqld_safe", "--skip-grant-tables"])
 
-        finally:
-            cursor.close()
-            connection.close()
+    print "ERROR: I'm not able to relaunch mysql in safe mode so I can't fix it, abording :("
+    sys.exit(1)
 
+
+def get_user_schema():
+    connection = mysql.connector.connect(
+        user='root',
+        host='127.0.0.1',
+        database='mysql'
+    )
+
+    cursor = connection.cursor()
+
+    print "Getting user table schema..."
+    cursor.execute("describe user")
+    schema = cursor.fetchall()
+
+    # first 3 fields are "host", "username", "password" and I already
+    # know what to put in them so I remove them
+    schema = schema[3:]
+
+    cursor.close()
+    connection.close()
+
+    print schema
+
+    return schema
+
+
+def recreate_broken_system_tables():
+    yunohost_mysql_password = open("/etc/yunohost/mysql", "r").read().strip()
+
+    command = "cd %s && myisamchk -a *.MYI 2>&1 | grep error | grep \"is not a\" | cut -d \"'\" -f 2 | cut -d '.' -f 1" % MYSQL_MYSQL_DB_DIR
+    broken_tables = filter(None, subprocess.check_output(command, shell=True).strip().split("\n"))
+
+    print broken_tables
+
+    launch_mysql_in_safe_mode()
+
+    try:
+        connection = mysql.connector.connect(
+            user='root',
+            host='127.0.0.1',
+            database='mysql'
+        )
+
+        cursor = connection.cursor()
+
+        for table in broken_tables:
+            print "Reparing table %s..." % table
+            cursor.execute("repair table %s use_frm" % table)
+            cursor.fetchall()
+
+        schema = get_user_schema()
+
+        # I need to recreate the 3 missing root users
+        for host in ("localhost", "::1", "127.0.0.1"):
+            arguments = ["'%s'" % host, "'root'", "PASSWORD('%s')" % yunohost_mysql_password]
+
+            # I'm reversing the schema to handle all case, we had schema
+            # variations from various versions of mysql/mariadb and this
+            # should handle most cases
+            for name, kind, required, _, default, _ in schema:
+                value = MYSQL_USER_TABLE_DEFAULTS.get(name, default)
+                if isinstance(value, basestring):
+                    arguments.append("'%s'" % value)
+                else:
+                    arguments.append(value)
+
+            sql = "insert into user values(%s);" % ", ".join(map(str, arguments))
+            print sql
+            cursor.execute(sql)
+
+        cursor.close()
+        connection.close()
+
+        try:
+            is_on_mariadb = subprocess.check_output("dpkg -l | grep mariadb-server-10.0", shell=True).strip()
+        except subprocess.CalledProcessError:
+            is_on_mariadb = False
+
+        # TODO check if it's mariadb or mysql that is installed
+        print "Regenerate debian 'debian-sys-maint' special user (this is SUPER SUPER SLOW)"
+        if is_on_mariadb:
+            subprocess.check_output("dpkg-reconfigure -f noninteractive -p critical mariadb-server-10.0", shell=True)
+        else:
+            # assume that we are on mysql, since the cubes are on
+            # debian-stable those 2 lines should hold for a long time ... I hope.
+            subprocess.check_output("dpkg-reconfigure -f noninteractive -p critical mysql-server-5.5", shell=True)
+
+        time.sleep(5)
+
+        # here we are finished for now, the **second** finally close will
+        # stop mysqld_safe for us
 
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
@@ -287,11 +334,11 @@ def fix_mysql_manually():
         raise e
 
     finally:
-        for process in psutil.process_iter():
-            if "mysql" in process.name():
-                process.kill()
+        cursor.close()
+        connection.close()
 
-    print "We rebuild the user table, let's start mysql hoping everything will be fine"
+
+def recreate_apps_users():
     subprocess.check_output(["systemctl", "restart", "mysql"])
 
     installed_apps = map(lambda x: x.strip(), filter(None, subprocess.check_output("yunohost app list -i | grep 'id:' | cut -d ':' -f 2", shell=True).strip().split("\n")))
@@ -321,6 +368,8 @@ def fix_mysql_manually():
         # I need to recreate the 3 missing root users
         for app, password in apps_with_mysql_db:
             arguments = ["'localhost'", "'%s'" % app, "PASSWORD('%s')" % password]
+
+            schema = get_user_schema()
 
             # I'm reversing the schema to handle all case, we had schema
             # variations from various versions of mysql/mariadb and this
@@ -366,27 +415,10 @@ def fix_mysql_manually():
         connection.close()
 
 
-def launch_mysql_in_safe_mode():
-    subprocess.Popen(["mysqld_safe", "--skip-grant-tables"])
-    time.sleep(3)
-
-    for i in range(1, 4):
-        try:
-            mysql.connector.connect(
-                user='root',
-                host='127.0.0.1',
-                database='mysql'
-            ).close()
-
-            return
-        except Exception as e:
-            print "Can't connect to mysql in safe mode (error: %s), wait 1min and retry (this somethime fix it because mysql ™)" % e
-            print "Attemp number %s (will try this a maximum number of 3 times)" % i
-            time.sleep(60)
-            subprocess.Popen(["mysqld_safe", "--skip-grant-tables"])
-
-    print "ERROR: I'm not able to relaunch mysql in safe mode so I can't fix it, abording :("
-    sys.exit(1)
+def stop_mysql():
+    for process in psutil.process_iter():
+        if "mysql" in process.name():
+            process.kill()
 
 
 def display_failure_informations():
@@ -406,8 +438,27 @@ def display_failure_informations():
 
 
 if __name__ == '__main__':
-   if not mysql_is_broken():
-       backup_mysql_db()
-   else:
-       print "Damn, mysql is broken, attempting restore!"
-       fix_mysql()
+    if not sys.argv[1:]:
+       if not mysql_is_broken():
+           backup_mysql_db()
+       else:
+           print "Damn, mysql is broken, attempting restore!"
+           fix_mysql()
+
+    else:
+        parser = argh.ArghParser()
+        parser.add_commands([
+            backup_mysql_db,
+            fix_mysql,
+            fix_mysql_manually,
+            fix_mysql_using_backup,
+            get_user_schema,
+            launch_mysql_in_safe_mode,
+            mysql_is_broken,
+            mysql_is_running,
+            recreate_apps_users,
+            recreate_broken_system_tables,
+            stop_mysql,
+            there_is_a_backup,
+        ])
+        parser.dispatch()
