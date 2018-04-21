@@ -354,6 +354,7 @@ def recreate_apps_users():
     apps_with_mysql_db = []
 
     for app in installed_apps:
+        print "get mysql password (if it has one) for app %s..." % app
         password = subprocess.check_output("yunohost app setting %s mysqlpwd" % app, shell=True).strip()
 
         if password:
