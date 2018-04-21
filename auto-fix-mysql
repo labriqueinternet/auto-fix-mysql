@@ -263,8 +263,6 @@ def get_user_schema():
 
 
 def recreate_broken_system_tables():
-    yunohost_mysql_password = open("/etc/yunohost/mysql", "r").read().strip()
-
     command = "cd %s && myisamchk -a *.MYI 2>&1 | grep error | grep \"is not a\" | cut -d \"'\" -f 2 | cut -d '.' -f 1" % MYSQL_MYSQL_DB_DIR
     broken_tables = filter(None, subprocess.check_output(command, shell=True).strip().split("\n"))
 
@@ -287,6 +285,8 @@ def recreate_broken_system_tables():
             cursor.fetchall()
 
         schema = get_user_schema()
+
+        yunohost_mysql_password = open("/etc/yunohost/mysql", "r").read().strip()
 
         # I need to recreate the 3 missing root users
         for host in ("localhost", "::1", "127.0.0.1"):
