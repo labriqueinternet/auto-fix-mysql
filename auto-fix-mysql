@@ -14,6 +14,8 @@ import argh
 import psutil
 import mysql.connector
 
+from mysql.connector.errors import ProgrammingError
+
 
 MYSQL_MYSQL_DB_DIR = "/var/lib/mysql/mysql"
 MYSQL_BACKUP_DIR = "/etc/yunohost/auto-fix-mysql/mysql-db-backup/"
@@ -238,11 +240,20 @@ def launch_mysql_in_safe_mode():
 
 
 def get_user_schema():
-    connection = mysql.connector.connect(
-        user='root',
-        host='127.0.0.1',
-        database='mysql'
-    )
+    try:
+        connection = mysql.connector.connect(
+            user='root',
+            host='127.0.0.1',
+            database='mysql'
+        )
+    except ProgrammingError:
+        # can't be sure if I'm in safe mode or not
+        connection = mysql.connector.connect(
+            user='root',
+            password=open("/etc/yunohost/mysql", "r").read().strip(),
+            host='127.0.0.1',
+            database='mysql'
+        )
 
     cursor = connection.cursor()
 
