@@ -341,6 +341,7 @@ def recreate_broken_system_tables():
 def recreate_apps_users():
     subprocess.check_output(["systemctl", "restart", "mysql"])
 
+    print "getting all apps mysql passwords..."
     installed_apps = map(lambda x: x.strip(), filter(None, subprocess.check_output("yunohost app list -i | grep 'id:' | cut -d ':' -f 2", shell=True).strip().split("\n")))
 
     apps_with_mysql_db = []
