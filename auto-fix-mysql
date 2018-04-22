@@ -409,7 +409,7 @@ def recreate_apps_users():
                 else:
                     arguments.append(value)
 
-            sql = "insert into user values(%s);" % ", ".join(map(str, arguments))
+            sql = "insert into user values(%s) ON DUPLICATE KEY UPDATE password=PASSWORD('%s');" % (", ".join(map(str, arguments)), password)
             logger.info(sql)
             cursor.execute(sql)
 
