@@ -221,6 +221,10 @@ def fix_mysql_manually():
 
 
 def launch_mysql_in_safe_mode():
+    logger.info("Trying to restart mysqld in safe mode...")
+
+    stop_mysql()
+
     subprocess.Popen(["mysqld_safe", "--skip-grant-tables"])
     time.sleep(3)
 
