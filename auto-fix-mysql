@@ -276,7 +276,7 @@ def get_user_schema():
     cursor.close()
     connection.close()
 
-    logger.info(str(schema))
+    logger.debug(str(schema))
 
     return schema
 
@@ -398,6 +398,7 @@ def recreate_apps_users():
             arguments = ["'localhost'", "'%s'" % app, "PASSWORD('%s')" % password]
 
             schema = get_user_schema()
+            logger.info("Resetting password for app %s...", app)
 
             # I'm reversing the schema to handle all case, we had schema
             # variations from various versions of mysql/mariadb and this
@@ -410,15 +411,15 @@ def recreate_apps_users():
                     arguments.append(value)
 
             sql = "insert into user values(%s) ON DUPLICATE KEY UPDATE password=PASSWORD('%s');" % (", ".join(map(str, arguments)), password)
-            logger.info(sql)
+            logger.debug(sql)
             cursor.execute(sql)
 
             sql = "FLUSH PRIVILEGES"
-            logger.info(sql)
+            logger.debug(sql)
             cursor.execute(sql)
 
             sql = "GRANT ALL PRIVILEGES ON `%s`.* TO '%s'@localhost" % (app, app)
-            logger.info(sql)
+            logger.debug(sql)
             cursor.execute(sql)
 
         # TODO check if it's mariadb or mysql that is installed
