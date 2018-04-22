@@ -489,4 +489,13 @@ if __name__ == '__main__':
             stop_mysql,
             there_is_a_backup,
         ])
+
+        # Add common switches
+        parser.add_argument('-v', '--verbose', action='store_true', help="Print debug messages")
+        parser.add_argument('-q', '--quiet', action='store_true', help="Print only important messages. Useful if executing this script with cron.")
+        args = parser.parse_args()
+        if args.quiet:
+            logger.setLevel(logging.WARNING)
+        elif args.verbose:
+            logger.setLevel(logging.DEBUG)
         parser.dispatch()
