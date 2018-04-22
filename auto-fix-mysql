@@ -5,6 +5,7 @@ import os
 import sys
 import time
 import shutil
+import logging
 import traceback
 import subprocess
 
@@ -16,6 +17,9 @@ import mysql.connector
 
 from mysql.connector.errors import ProgrammingError
 
+logging.basicConfig(format='%(asctime)s [%(levelname)s] %(message)s')
+logger = logging.getLogger("auto-fix-mysql")
+logger.setLevel("INFO")
 
 MYSQL_MYSQL_DB_DIR = "/var/lib/mysql/mysql"
 MYSQL_BACKUP_DIR = "/etc/yunohost/auto-fix-mysql/mysql-db-backup/"
@@ -149,7 +153,7 @@ def backup_mysql_db():
 
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
-        print e
+        logger.error(str(e))
 
     finally:
         cursor.execute("UNLOCK TABLES")
@@ -164,7 +168,7 @@ def there_is_a_backup():
 
 def fix_mysql():
     if there_is_a_backup():
-        print "Yay, we have a backup of mysql, let's use it \o/"
+        logger.info("Yay, we have a backup of mysql, let's use it \o/")
         fix_mysql_using_backup()
 
     else:
@@ -172,7 +176,7 @@ def fix_mysql():
             fix_mysql_manually()
         except Exception as e:
             traceback.print_exc(file=sys.stdout)
-            print e
+            logger.error(str(e))
 
             display_failure_informations()
 
@@ -185,18 +189,18 @@ def fix_mysql_using_backup():
     if not os.path.exists(MYSQL_BROKEN_DIR):
         os.makedirs(MYSQL_BROKEN_DIR)
 
-    print "Save old broken db in %s..." % broken_backup_target_dir
+    logger.info("Save old broken db in %s...", broken_backup_target_dir)
     shutil.move(MYSQL_MYSQL_DB_DIR, broken_backup_target_dir)
 
-    print "Restore working db..."
+    logger.info("Restore working db...")
     shutil.copytree(os.path.join(MYSQL_BACKUP_DIR, "mysql"), MYSQL_MYSQL_DB_DIR)
     subprocess.check_call(["chown", "-R", "mysql:mysql", os.path.join(MYSQL_MYSQL_DB_DIR)])
 
-    print "Trying to restart mysql..."
+    logger.info("Trying to restart mysql...")
     result = subprocess.call(["service", "mysql", "start"])
 
     if result == 0:
-        print "Success!"
+        logger.info("Success!")
     else:
         fix_mysql_manually()
 
@@ -206,13 +210,13 @@ def fix_mysql_manually():
         recreate_broken_system_tables()
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
-        print e
+        logger.error(str(e))
         raise e
 
     finally:
         stop_mysql()
 
-    print "We rebuild the user table, let's start mysql hoping everything will be fine"
+    logger.info("We rebuild the user table, let's start mysql hoping everything will be fine")
     recreate_apps_users()
 
 
@@ -230,12 +234,12 @@ def launch_mysql_in_safe_mode():
 
             return
         except Exception as e:
-            print "Can't connect to mysql in safe mode (error: %s), wait 1min and retry (this somethime fix it because mysql ™)" % e
-            print "Attemp number %s (will try this a maximum number of 3 times)" % i
+            logger.warning("Can't connect to mysql in safe mode (error: %s), wait 1min and retry (this somethime fix it because mysql ™)", e)
+            logger.warning("Attemp number %s (will try this a maximum number of 3 times)", i)
             time.sleep(60)
             subprocess.Popen(["mysqld_safe", "--skip-grant-tables"])
 
-    print "ERROR: I'm not able to relaunch mysql in safe mode so I can't fix it, abording :("
+    logger.error("ERROR: I'm not able to relaunch mysql in safe mode so I can't fix it, abording :(")
     sys.exit(1)
 
 
@@ -257,7 +261,7 @@ def get_user_schema():
 
     cursor = connection.cursor()
 
-    print "Getting user table schema..."
+    logger.info("Getting user table schema...")
     cursor.execute("describe user")
     schema = cursor.fetchall()
 
@@ -268,7 +272,7 @@ def get_user_schema():
     cursor.close()
     connection.close()
 
-    print schema
+    logger.info(str(schema))
 
     return schema
 
@@ -277,7 +281,7 @@ def recreate_broken_system_tables():
     command = "cd %s && myisamchk -a *.MYI 2>&1 | grep error | grep \"is not a\" | cut -d \"'\" -f 2 | cut -d '.' -f 1" % MYSQL_MYSQL_DB_DIR
     broken_tables = filter(None, subprocess.check_output(command, shell=True).strip().split("\n"))
 
-    print broken_tables
+    logger.info(str(broken_tables))
 
     launch_mysql_in_safe_mode()
 
@@ -291,7 +295,7 @@ def recreate_broken_system_tables():
         cursor = connection.cursor()
 
         for table in broken_tables:
-            print "Reparing table %s..." % table
+            logger.info("Reparing table %s...", table)
             cursor.execute("repair table %s use_frm" % table)
             cursor.fetchall()
 
@@ -316,12 +320,12 @@ def recreate_broken_system_tables():
             # check if user already exist
             cursor.execute('select host, user from mysql.user where host="%s" and user="root";' % (host))
             if list(cursor.fetchall()):
-                print "root:%s already exist, reset its password" % (host)
+                logger.info("root:%s already exist, reset its password", host)
                 sql = 'update user set password = PASSWORD(\'%s\') where host="%s" and user="root";' % (yunohost_mysql_password, host)
             else:
                 sql = "insert into user values(%s);" % ", ".join(map(str, arguments))
 
-            print sql
+            logger.info(str(sql))
             cursor.execute(sql)
 
         cursor.close()
@@ -333,7 +337,7 @@ def recreate_broken_system_tables():
             is_on_mariadb = False
 
         # TODO check if it's mariadb or mysql that is installed
-        print "Regenerate debian 'debian-sys-maint' special user (this is SUPER SUPER SLOW)"
+        logger.info("Regenerate debian 'debian-sys-maint' special user (this is SUPER SUPER SLOW)")
         if is_on_mariadb:
             subprocess.check_output("dpkg-reconfigure -f noninteractive -p critical mariadb-server-10.0", shell=True)
         else:
@@ -348,7 +352,7 @@ def recreate_broken_system_tables():
 
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
-        print e
+        logger.error(str(e))
         raise e
 
     finally:
@@ -359,20 +363,20 @@ def recreate_broken_system_tables():
 def recreate_apps_users():
     subprocess.check_output(["systemctl", "restart", "mysql"])
 
-    print "getting all apps mysql passwords..."
+    logger.info("getting all apps mysql passwords...")
     installed_apps = map(lambda x: x.strip(), filter(None, subprocess.check_output("yunohost app list -i | grep 'id:' | cut -d ':' -f 2", shell=True).strip().split("\n")))
 
     apps_with_mysql_db = []
 
     for app in installed_apps:
-        print "get mysql password (if it has one) for app %s..." % app
+        logger.info("get mysql password (if it has one) for app %s...", app)
         password = subprocess.check_output("yunohost app setting %s mysqlpwd" % app, shell=True).strip()
 
         if password:
             apps_with_mysql_db.append([app, password])
 
     if not apps_with_mysql_db:
-        print "Success!"
+        logger.info("Success!")
         return
 
     try:
@@ -402,15 +406,15 @@ def recreate_apps_users():
                     arguments.append(value)
 
             sql = "insert into user values(%s);" % ", ".join(map(str, arguments))
-            print sql
+            logger.info(sql)
             cursor.execute(sql)
 
             sql = "FLUSH PRIVILEGES"
-            print sql
+            logger.info(sql)
             cursor.execute(sql)
 
             sql = "GRANT ALL PRIVILEGES ON %s.* TO '%s'@localhost" % (app, app)
-            print sql
+            logger.info(sql)
             cursor.execute(sql)
 
         # TODO check if it's mariadb or mysql that is installed
@@ -426,7 +430,7 @@ def recreate_apps_users():
 
     except Exception as e:
         traceback.print_exc(file=sys.stdout)
-        print e
+        logger.error(str(e))
 
         raise e
 
@@ -444,17 +448,17 @@ def stop_mysql():
 def display_failure_informations():
     mysql_logs = "/var/lib/mysql/%s.err" % (subprocess.check_output(["hostname"]).strip())
     print
-    print "Huho, I've failed :("
-    print "Go look at https://wiki.labriqueinter.net/doku.php?id=howto:fix_self_corrupt_mysql for more informations"
+    logger.error("Huho, I've failed :(")
+    logger.error("Go look at https://wiki.labriqueinter.net/doku.php?id=howto:fix_self_corrupt_mysql for more informations")
 
     if os.path.exists(mysql_logs):
         print
         message = "Display last 40 lines of mysql logs from %s:" % mysql_logs
-        print message
+        logger.info(message)
         print "=" * len(message)
         subprocess.call(["tail", "-n", "40", mysql_logs])
     else:
-        print "MySQL usually store it's failed starting log inside %s" % mysql_logs
+        logger.warning("MySQL usually store it's failed starting log inside %s", mysql_logs)
 
 
 if __name__ == '__main__':
@@ -462,7 +466,7 @@ if __name__ == '__main__':
        if not mysql_is_broken():
            backup_mysql_db()
        else:
-           print "Damn, mysql is broken, attempting restore!"
+           logger.warning("Damn, mysql is broken, attempting restore!")
            fix_mysql()
 
     else:
