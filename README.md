@@ -1,7 +1,7 @@
 # Introduction
 
-Du to MySQL being a stupid database that store it's core system database in the
-MyISANE format, it regularly self corrupt itself on power failures thus making
+Due to MySQL being a stupid database that store it's core system database in the
+MyINSANE format, it regularly self corrupt itself on power failures thus making
 it totally unusable.
 
 Fixing this by hand it a long, painful, very complicated and horrible process.

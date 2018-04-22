@@ -239,7 +239,7 @@ def launch_mysql_in_safe_mode():
             time.sleep(60)
             subprocess.Popen(["mysqld_safe", "--skip-grant-tables"])
 
-    logger.error("ERROR: I'm not able to relaunch mysql in safe mode so I can't fix it, abording :(")
+    logger.error("I'm not able to relaunch mysql in safe mode so I can't fix it, aborting :(")
     sys.exit(1)
 
 
@@ -320,7 +320,7 @@ def recreate_broken_system_tables():
             # check if user already exist
             cursor.execute('select host, user from mysql.user where host="%s" and user="root";' % (host))
             if list(cursor.fetchall()):
-                logger.info("root:%s already exist, reset its password", host)
+                logger.info("'root'@'%s' already exist, reset its password", host)
                 sql = 'update user set password = PASSWORD(\'%s\') where host="%s" and user="root";' % (yunohost_mysql_password, host)
             else:
                 sql = "insert into user values(%s);" % ", ".join(map(str, arguments))
