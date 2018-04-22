@@ -417,7 +417,7 @@ def recreate_apps_users():
             logger.info(sql)
             cursor.execute(sql)
 
-            sql = "GRANT ALL PRIVILEGES ON %s.* TO '%s'@localhost" % (app, app)
+            sql = "GRANT ALL PRIVILEGES ON `%s`.* TO '%s'@localhost" % (app, app)
             logger.info(sql)
             cursor.execute(sql)
 
