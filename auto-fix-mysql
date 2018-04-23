@@ -221,6 +221,10 @@ def fix_mysql_manually():
 
 
 def launch_mysql_in_safe_mode():
+    logger.info("Trying to restart mysqld in safe mode...")
+
+    stop_mysql()
+
     subprocess.Popen(["mysqld_safe", "--skip-grant-tables"])
     time.sleep(3)
 
@@ -239,7 +243,7 @@ def launch_mysql_in_safe_mode():
             time.sleep(60)
             subprocess.Popen(["mysqld_safe", "--skip-grant-tables"])
 
-    logger.error("ERROR: I'm not able to relaunch mysql in safe mode so I can't fix it, abording :(")
+    logger.error("I'm not able to relaunch mysql in safe mode so I can't fix it, aborting :(")
     sys.exit(1)
 
 
@@ -272,7 +276,7 @@ def get_user_schema():
     cursor.close()
     connection.close()
 
-    logger.info(str(schema))
+    logger.debug(str(schema))
 
     return schema
 
@@ -320,7 +324,7 @@ def recreate_broken_system_tables():
             # check if user already exist
             cursor.execute('select host, user from mysql.user where host="%s" and user="root";' % (host))
             if list(cursor.fetchall()):
-                logger.info("root:%s already exist, reset its password", host)
+                logger.info("'root'@'%s' already exist, reset its password", host)
                 sql = 'update user set password = PASSWORD(\'%s\') where host="%s" and user="root";' % (yunohost_mysql_password, host)
             else:
                 sql = "insert into user values(%s);" % ", ".join(map(str, arguments))
@@ -394,6 +398,7 @@ def recreate_apps_users():
             arguments = ["'localhost'", "'%s'" % app, "PASSWORD('%s')" % password]
 
             schema = get_user_schema()
+            logger.info("Resetting password for app %s...", app)
 
             # I'm reversing the schema to handle all case, we had schema
             # variations from various versions of mysql/mariadb and this
@@ -405,16 +410,16 @@ def recreate_apps_users():
                 else:
                     arguments.append(value)
 
-            sql = "insert into user values(%s);" % ", ".join(map(str, arguments))
-            logger.info(sql)
+            sql = "insert into user values(%s) ON DUPLICATE KEY UPDATE password=PASSWORD('%s');" % (", ".join(map(str, arguments)), password)
+            logger.debug(sql)
             cursor.execute(sql)
 
             sql = "FLUSH PRIVILEGES"
-            logger.info(sql)
+            logger.debug(sql)
             cursor.execute(sql)
 
-            sql = "GRANT ALL PRIVILEGES ON %s.* TO '%s'@localhost" % (app, app)
-            logger.info(sql)
+            sql = "GRANT ALL PRIVILEGES ON `%s`.* TO '%s'@localhost" % (app, app)
+            logger.debug(sql)
             cursor.execute(sql)
 
         # TODO check if it's mariadb or mysql that is installed
@@ -485,4 +490,13 @@ if __name__ == '__main__':
             stop_mysql,
             there_is_a_backup,
         ])
+
+        # Add common switches
+        parser.add_argument('-v', '--verbose', action='store_true', help="Print debug messages")
+        parser.add_argument('-q', '--quiet', action='store_true', help="Print only important messages. Useful if executing this script with cron.")
+        args = parser.parse_args()
+        if args.quiet:
+            logger.setLevel(logging.WARNING)
+        elif args.verbose:
+            logger.setLevel(logging.DEBUG)
         parser.dispatch()
