@@ -116,6 +116,14 @@ MYSQL_USER_TABLE_DEFAULTS_FOR_APPLICATIONS = {
 }
 
 
+def connect():
+    return mysql.connector.connect(
+            user='root',
+            unix_socket="/var/run/mysqld/mysqld.sock",
+            database='mysql'
+        )
+
+
 def mysql_is_running():
     return len([x for x in psutil.process_iter() if x.name().lower() == "mysqld"]) > 0
 
@@ -128,12 +136,7 @@ def mysql_is_broken():
 
 
 def backup_mysql_db():
-    connection = mysql.connector.connect(
-        user='root',
-        password=open("/etc/yunohost/mysql", "r").read().strip(),
-        host='127.0.0.1',
-        database='mysql'
-    )
+    connection = connect()
 
     cursor = connection.cursor()
 
@@ -230,12 +233,7 @@ def launch_mysql_in_safe_mode():
 
     for i in range(1, 4):
         try:
-            mysql.connector.connect(
-                user='root',
-                host='127.0.0.1',
-                database='mysql'
-            ).close()
-
+            connect().close()
             return
         except Exception as e:
             logger.warning("Can't connect to mysql in safe mode (error: %s), wait 1min and retry (this somethime fix it because mysql ™)", e)
@@ -248,21 +246,7 @@ def launch_mysql_in_safe_mode():
 
 
 def get_user_schema():
-    try:
-        connection = mysql.connector.connect(
-            user='root',
-            host='127.0.0.1',
-            database='mysql'
-        )
-    except ProgrammingError:
-        # can't be sure if I'm in safe mode or not
-        connection = mysql.connector.connect(
-            user='root',
-            password=open("/etc/yunohost/mysql", "r").read().strip(),
-            host='127.0.0.1',
-            database='mysql'
-        )
-
+    connection = connect()
     cursor = connection.cursor()
 
     logger.info("Getting user table schema...")
@@ -290,11 +274,7 @@ def recreate_broken_system_tables():
     launch_mysql_in_safe_mode()
 
     try:
-        connection = mysql.connector.connect(
-            user='root',
-            host='127.0.0.1',
-            database='mysql'
-        )
+        connection = connect()
 
         cursor = connection.cursor()
 
@@ -335,21 +315,21 @@ def recreate_broken_system_tables():
         cursor.close()
         connection.close()
 
+        time.sleep(3)
+
+        os.system("pkill -9 mysqld")
+
+        time.sleep(3)
+
         try:
-            is_on_mariadb = subprocess.check_output("dpkg -l | grep mariadb-server-10.0", shell=True).strip()
+            # Have to do some epic regex magic to find the package name independently of the distribution + it could be mariadb or mysql
+            # Because why should this be simple ? You must suffer !!!
+            packagename = subprocess.check_output("dpkg --list | sed -ne 's/^ii  \(\(mariadb\|mysql\)-server-[[:digit:].]\+\) .*$/\\1/p'", shell=True).strip()
         except subprocess.CalledProcessError:
-            is_on_mariadb = False
+            raise Exception("Could not grep the mariadb/mysql server package name in dpkg --list :|")
 
-        # TODO check if it's mariadb or mysql that is installed
         logger.info("Regenerate debian 'debian-sys-maint' special user (this is SUPER SUPER SLOW)")
-        if is_on_mariadb:
-            subprocess.check_output("dpkg-reconfigure -f noninteractive -p critical mariadb-server-10.0", shell=True)
-        else:
-            # assume that we are on mysql, since the cubes are on
-            # debian-stable those 2 lines should hold for a long time ... I hope.
-            subprocess.check_output("dpkg-reconfigure -f noninteractive -p critical mysql-server-5.5", shell=True)
-
-        time.sleep(5)
+        subprocess.check_output("dpkg-reconfigure -f noninteractive -p critical %s" % packagename, shell=True)
 
         # here we are finished for now, the **second** finally close will
         # stop mysqld_safe for us
@@ -384,12 +364,7 @@ def recreate_apps_users():
         return
 
     try:
-        connection = mysql.connector.connect(
-            user='root',
-            password=open("/etc/yunohost/mysql", "r").read().strip(),
-            host='127.0.0.1',
-            database='mysql'
-        )
+        connection = connect()
 
         cursor = connection.cursor()
 
